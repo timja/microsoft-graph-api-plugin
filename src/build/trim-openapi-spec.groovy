@@ -21,14 +21,17 @@ import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
 
 String sha = project.properties['graph.metadata.sha']
-Set<String> allowlist = project.properties['graph.discriminator.allowlist'].split(',')*.trim() as Set
+String allowlistProp = (project.properties['graph.discriminator.allowlist'] ?: '').toString()
+Set<String> allowlist = allowlistProp.split(',')*.trim().findAll { it } as Set
+String allowlistKey = allowlist.toList().sort().join(',')
 
 File specDir = new File(project.build.directory as String, "openapi-spec/${sha}")
 specDir.mkdirs()
 File rawSpec = new File(specDir, 'openapi.yaml')
 File trimmedSpec = new File(specDir, 'openapi-trimmed.yaml')
+File allowlistMarker = new File(specDir, 'openapi-trimmed.allowlist')
 
-if (trimmedSpec.exists()) {
+if (trimmedSpec.exists() && allowlistMarker.exists() && allowlistMarker.getText('UTF-8').trim() == allowlistKey) {
     println "Trimmed OpenAPI description is up to date: ${trimmedSpec}"
     return
 }
@@ -40,9 +43,11 @@ if (!rawSpec.exists()) {
     while (true) {
         attempts++
         try {
-            println "Downloading ${url}"
-            url.withInputStream { input -> partial.withOutputStream { it << input } }
-            break
+println "Downloading ${url}"
+def conn = url.openConnection()
+conn.connectTimeout = 30_000
+conn.readTimeout = 300_000
+conn.inputStream.withCloseable { input -> partial.withOutputStream { it << input } }
         } catch (IOException e) {
             partial.delete()
             if (attempts >= 3) {
@@ -70,7 +75,7 @@ walk = { node ->
     if (node instanceof Map) {
         def properties = node['properties']
         if (properties instanceof Map) {
-            def navigation = properties.findAll { it.value instanceof Map && it.value['x-ms-navigationProperty'] }
+def navigation = properties.findAll { it.value instanceof Map && it.value['x-ms-navigationProperty'] == true }
             navigation.keySet().each { properties.remove(it) }
             navigationPropertiesRemoved += navigation.size()
         }
@@ -99,5 +104,9 @@ dumperOptions.defaultFlowStyle = DumperOptions.FlowStyle.BLOCK
 File partial = new File(specDir, 'openapi-trimmed.yaml.part')
 partial.withWriter('UTF-8') { new Yaml(dumperOptions).dump(document, it) }
 Files.move(partial.toPath(), trimmedSpec.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+new File(specDir, 'openapi-trimmed.allowlist').withWriter('UTF-8') {
+    it << (allowlist.toList().sort().join(','))
+}
 println "Trimmed OpenAPI description: removed ${navigationPropertiesRemoved} navigation properties, " +
         "trimmed ${discriminatorMappingsTrimmed} discriminator mappings -> ${trimmedSpec}"
