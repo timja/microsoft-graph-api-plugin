@@ -38,6 +38,11 @@
     <revision>1.225181</revision>
     <!-- Commit SHA of microsoftgraph/msgraph-metadata providing openapi/v1.0/openapi.yaml -->
     <graph.metadata.sha>70d1b3f19bda2495b22b6900354b030c260601d5</graph.metadata.sha>
+    <!-- @odata.type values that must deserialize to their concrete model rather than the
+         declared base type. All other discriminator mappings are trimmed from the spec
+         before generation (see src/build/trim-openapi-spec.groovy); extend this list when
+         a consumer needs another polymorphic type. -->
+    <graph.discriminator.allowlist>#microsoft.graph.user,#microsoft.graph.group,#microsoft.graph.directoryObject,#microsoft.graph.profilePhoto</graph.discriminator.allowlist>
     <changelist>999999-SNAPSHOT</changelist>
 
     <!-- Kiota CLI (code generator), see https://github.com/microsoft/kiota/releases -->
@@ -243,16 +248,49 @@
   <build>
     <plugins>
       <plugin>
+        <!-- Downloads the OpenAPI description and trims it (navigation properties,
+             discriminator mappings) so Kiota generates ~150 files instead of ~3000 -->
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <version>4.2.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.apache.groovy</groupId>
+            <artifactId>groovy</artifactId>
+            <version>4.0.32</version>
+          </dependency>
+          <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>2.4</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <id>trim-openapi-spec</id>
+            <goals>
+              <goal>execute</goal>
+            </goals>
+            <phase>generate-sources</phase>
+            <configuration>
+              <scripts>
+                <script>file:///${project.basedir}/src/build/trim-openapi-spec.groovy</script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>io.kiota</groupId>
         <artifactId>kiota-maven-plugin</artifactId>
         <version>0.0.36</version>
         <configuration>
           <kiotaVersion>${kiota.cli.version}</kiotaVersion>
-          <!-- default is 30s; the ~37MB Graph spec takes far longer to process -->
+          <!-- default is 30s; the ~36MB Graph spec takes far longer to process -->
           <kiotaTimeout>1800</kiotaTimeout>
-          <url>https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/${graph.metadata.sha}/openapi/v1.0/openapi.yaml</url>
-          <!-- SHA in the path defeats the "skip download if file exists" cache on bumps -->
-          <downloadTarget>${project.build.directory}/openapi-spec/${graph.metadata.sha}</downloadTarget>
+          <!-- Downloaded and trimmed by the gmavenplus-plugin execution above;
+               the SHA in the path defeats stale caches on version bumps -->
+          <file>${project.build.directory}/openapi-spec/${graph.metadata.sha}/openapi-trimmed.yaml</file>
           <language>Java</language>
           <namespace>io.jenkins.plugins.microsoftgraph</namespace>
           <!-- A hand-written GraphServiceClient subclass adds the constructors and

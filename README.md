@@ -25,8 +25,18 @@ near-drop-in migration (`com.microsoft.graph.models.User` →
 `microsoft-graph-core` and the Microsoft Kiota Java runtime; `azure-identity`, OkHttp, and Gson are
 provided by the `azure-sdk`, `okhttp-api`, and `gson-api` plugins.
 
+Before generation, the OpenAPI description is trimmed by
+[`src/build/trim-openapi-spec.groovy`](src/build/trim-openapi-spec.groovy): navigation properties
+(only returned on `$expand`, which this client never issues) are removed, and discriminator
+mappings are pruned to the `@odata.type` values in the `graph.discriminator.allowlist` property.
+Without this, the base `microsoft.graph.entity` schema's discriminator mapping pulls all ~1100
+Graph entity types into the generated client (~3000 files); with it, ~150 files are generated.
+Responses with a trimmed `@odata.type` still deserialize as the declared base type.
+
 Need an endpoint that isn't generated? Open a pull request adding it to the `includePath` list in
-[`pom.xml`](pom.xml) — regeneration happens automatically on the next build.
+[`pom.xml`](pom.xml) — regeneration happens automatically on the next build. If the new endpoint
+relies on `$expand` or on polymorphic deserialization of additional types, extend
+`graph.discriminator.allowlist` in the same pull request.
 
 If it adds lots of new endpoints, we will need to convert this to a multi-module build and publish separate artifacts for each API surface. For now, the plugin is intentionally minimal to keep the
 artifact size small and avoid unnecessary dependencies in plugins that don't need the full Graph API.
