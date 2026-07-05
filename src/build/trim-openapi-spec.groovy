@@ -43,11 +43,12 @@ if (!rawSpec.exists()) {
     while (true) {
         attempts++
         try {
-println "Downloading ${url}"
-def conn = url.openConnection()
-conn.connectTimeout = 30_000
-conn.readTimeout = 300_000
-conn.inputStream.withCloseable { input -> partial.withOutputStream { it << input } }
+            println "Downloading ${url}"
+            def conn = url.openConnection()
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 300_000
+            conn.inputStream.withCloseable { input -> partial.withOutputStream { it << input } }
+            break
         } catch (IOException e) {
             partial.delete()
             if (attempts >= 3) {
@@ -75,7 +76,7 @@ walk = { node ->
     if (node instanceof Map) {
         def properties = node['properties']
         if (properties instanceof Map) {
-def navigation = properties.findAll { it.value instanceof Map && it.value['x-ms-navigationProperty'] == true }
+            def navigation = properties.findAll { it.value instanceof Map && it.value['x-ms-navigationProperty'] == true }
             navigation.keySet().each { properties.remove(it) }
             navigationPropertiesRemoved += navigation.size()
         }
