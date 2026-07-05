@@ -1,0 +1,51 @@
+name: Update Graph metadata
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Look up latest openapi/v1.0/openapi.yaml commit
+        id: metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          commit=$(gh api 'repos/microsoftgraph/msgraph-metadata/commits?path=openapi/v1.0/openapi.yaml&per_page=1' --jq '.[0]')
+          sha=$(jq -r '.sha' <<< "$commit")
+          message=$(jq -r '.commit.message' <<< "$commit")
+          # Commit messages look like: "Update clean v1.0 metadata file with 225181 [skip ci]"
+          build=$(grep -oE 'metadata file with [0-9]+' <<< "$message" | grep -oE '[0-9]+' || true)
+          if [ -z "$build" ]; then
+            echo "::error::Could not extract metadata build number from commit message: $message"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Update pom.xml properties
+        run: |
+          mvn -ntp -q versions:set-property -Dproperty=graph.metadata.sha -DnewVersion='${{ steps.metadata.outputs.sha }}' -DgenerateBackupPoms=false
+          mvn -ntp -q versions:set-property -Dproperty=revision -DnewVersion='1.${{ steps.metadata.outputs.build }}' -DgenerateBackupPoms=false
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bump-graph-metadata
+          commit-message: Update Microsoft Graph metadata to build ${{ steps.metadata.outputs.build }}
+          title: Update Microsoft Graph metadata to build ${{ steps.metadata.outputs.build }}
+          body: |
+            Regenerates the client from [microsoftgraph/msgraph-metadata@${{ steps.metadata.outputs.sha }}](https://github.com/microsoftgraph/msgraph-metadata/commit/${{ steps.metadata.outputs.sha }})
+            (`openapi/v1.0/openapi.yaml`, metadata build ${{ steps.metadata.outputs.build }}).
+
+            Merging this PR triggers an automated plugin release.
+          labels: enhancement
+          sign-commits: true
+          delete-branch: true

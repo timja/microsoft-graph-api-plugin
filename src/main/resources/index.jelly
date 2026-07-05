@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+    Provides a minimal, Microsoft Graph (Entra ID) API client
+</div>
